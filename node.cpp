@@ -6,7 +6,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
-
+#include <list>
 
 using namespace std;
 using namespace boost;
@@ -153,30 +153,40 @@ private:
   {
     shared_ptr<tcp::socket> socket(new tcp::socket(acceptor.get_io_service()));
 
-    new_peer = shared_ptr<Peer>(new Peer(socket));
+    Peer* new_peer(new Peer(socket));
 
-    network->add_peer(new_peer);
+    list<Peer*>::iterator new_peer_it;
+    new_peer_it = pending_peers.insert(pending_peers.begin(), new_peer);
 
     acceptor.async_accept(new_peer->get_socket(),
-			  bind(&Local_Listener::handle_accept, this, new_peer,
+			  bind(&Local_Listener::handle_accept, this, new_peer_it,
 			       asio::placeholders::error) );
   }
 
-  void handle_accept(shared_ptr<Peer> new_peer,
+  void handle_accept(list<Peer*>::iterator new_peer_it,
                      const system::error_code& error)
   {
     if (!error) {
+      shared_ptr<Peer> new_peer(*new_peer_it);
+
+      network->add_peer(new_peer);
       new_peer->start_listening();
+
+      pending_peers.erase(new_peer_it);
 
       DEBUG("Peer at address " << new_peer->get_address() << " has joined!");
 
       start_accept();
     }
+    else {
+      DEBUG("Local_Listener::handle_accept: " << error.message());
+    }
+        
   }
 
   tcp::acceptor acceptor;
   shared_ptr<Network> network;
-  shared_ptr<Peer> new_peer;
+  list<Peer*> pending_peers;
 };
 
 // function to bind socket readings to
@@ -217,11 +227,11 @@ int main() {
   
   thread io_service_thread(bind(&asio::io_service::run, io_service));
 
-  for(;;) {
+  cout << "What to do?" << endl
+       << "send <message> - Send <message> to peers" << endl
+       << "add <address> - Add peer with address <address>" << endl;
 
-    cout << "What to do?" << endl
-	 << "send <message> - Send <message> to peers" << endl
-	 << "add <address> - Add peer with address <address>" << endl;
+  for(;;) {
 
     string input, command, argument;
     getline(cin, input);
