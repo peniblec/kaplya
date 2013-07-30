@@ -25,26 +25,20 @@ const string COMMAND_SEND = "send";
 const string COMMAND_ADD = "add";
 
 class Peer;
-void display_incoming_message(shared_ptr<Peer> p);
+void display_incoming_message(Peer* p);
 
 class Peer
-  : public enable_shared_from_this<Peer>
 {
 public:
-  typedef shared_ptr<Peer> pointer;
-
-  // indirection needed because sockets suck
-  static pointer create(asio::io_service& io_service) {
-    return pointer(new Peer(io_service));
-  }
 
   Peer(shared_ptr<tcp::socket> _socket)
     : socket(_socket) {}
 
   void start_listening() {
+    memset(last_message, 0, MESSAGE_SIZE);
+    
     socket->async_read_some(asio::buffer(last_message),
-			    bind(&display_incoming_message, shared_from_this()));
-
+			    bind(&display_incoming_message, this));
   }
 
   tcp::socket& get_socket() {
@@ -62,7 +56,7 @@ public:
 
   void send(string message) {
     asio::async_write(*socket, asio::buffer(message),
-		      bind(&Peer::finish_write, shared_from_this()));
+		      bind(&Peer::finish_write, this));
   }
 
   void finish_write() {
@@ -70,10 +64,6 @@ public:
 
 
 private:
-  Peer(asio::io_service& io_service)
-    : socket(new tcp::socket(io_service)) {
-  }
-
   string id;
   shared_ptr<tcp::socket> socket;
   char last_message[MESSAGE_SIZE];
@@ -107,12 +97,12 @@ public:
 	  Local_Peer& p)
     : io_service(_ios), resolver(_resolver), local_peer(p) {}
   
-  void add_peer(Peer::pointer p) {
+  void add_peer(shared_ptr<Peer> p) {
 
     peers.push_back(p);
   }
 
-  vector<Peer::pointer> get_peers() {
+  vector<shared_ptr<Peer> > get_peers() {
     return peers;
   }
 
@@ -124,7 +114,7 @@ public:
     shared_ptr<tcp::socket> socket(new tcp::socket(*io_service));
     asio::connect(*socket, endpoint_iterator);
 
-    Peer::pointer new_peer = shared_ptr<Peer>(new Peer(socket));
+    shared_ptr<Peer> new_peer(new Peer(socket));
     add_peer(new_peer);
     new_peer->start_listening(); // TODO: factorize stuff?
   }
@@ -141,7 +131,7 @@ private:
   shared_ptr<asio::io_service> io_service;
   shared_ptr<tcp::resolver> resolver;
 
-  vector<Peer::pointer> peers;
+  vector<shared_ptr<Peer> > peers;
   Local_Peer local_peer;
 };
 
@@ -159,7 +149,9 @@ public:
 private:
   void start_accept()
   {
-    new_peer = Peer::create(acceptor.get_io_service());
+    shared_ptr<tcp::socket> socket(new tcp::socket(acceptor.get_io_service()));
+
+    new_peer = shared_ptr<Peer>(new Peer(socket));
 
     network.add_peer(new_peer);
 
@@ -168,27 +160,29 @@ private:
 			       asio::placeholders::error) );
   }
 
-  void handle_accept(Peer::pointer new_peer,
+  void handle_accept(shared_ptr<Peer> new_peer,
                      const system::error_code& error)
   {
     if (!error) {
       new_peer->start_listening();
 
-      cout << "Peer at address " << new_peer->get_address() << " has joined!" << endl;
+      DEBUG("Peer at address " << new_peer->get_address() << " has joined!");
 
       start_accept();
     }
   }
 
   tcp::acceptor acceptor;
-  Peer::pointer new_peer;
   Network network;
+  shared_ptr<Peer> new_peer;
 };
 
 // function to bind socket readings to
-void display_incoming_message(Peer::pointer p) {
+void display_incoming_message(Peer* p) {
   
   cout << "- " << p->get_address() << ": " << p->get_last_message() << endl;
+
+  p->start_listening();
 }
 
 void parse_input(string& input, string& command, string& argument) {
