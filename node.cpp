@@ -121,6 +121,8 @@ public:
 
   void send_all(string message) {
 
+    DEBUG("Sending \"" << message << "\" to " << peers.size() << " peers.");
+
     for (uint p=0 ; p<peers.size() ; p++) {
 
       peers[p]->send(message);
@@ -139,7 +141,7 @@ private:
 class Local_Listener {
 
 public:
-  Local_Listener(shared_ptr<asio::io_service> io_service, Network& _network)
+  Local_Listener(shared_ptr<asio::io_service> io_service, shared_ptr<Network> _network)
     : acceptor(*io_service, tcp::endpoint(tcp::v4(), 1337)),
       network(_network)
   {
@@ -153,7 +155,7 @@ private:
 
     new_peer = shared_ptr<Peer>(new Peer(socket));
 
-    network.add_peer(new_peer);
+    network->add_peer(new_peer);
 
     acceptor.async_accept(new_peer->get_socket(),
 			  bind(&Local_Listener::handle_accept, this, new_peer,
@@ -173,7 +175,7 @@ private:
   }
 
   tcp::acceptor acceptor;
-  Network network;
+  shared_ptr<Network> network;
   shared_ptr<Peer> new_peer;
 };
 
@@ -209,7 +211,7 @@ int main() {
 
 
   Local_Peer local_peer;
-  Network network(io_service, resolver, local_peer);
+  shared_ptr<Network> network(new Network(io_service, resolver, local_peer));
   Local_Listener llistener(io_service, network);
 
   
@@ -228,11 +230,11 @@ int main() {
 
     if ( command.compare(COMMAND_SEND)==0 ) {
 
-      network.send_all(argument);
+      network->send_all(argument);
     }
     else if ( command.compare(COMMAND_ADD)==0 ) {
 
-      network.add(argument);
+      network->add(argument);
     }
 
   }
