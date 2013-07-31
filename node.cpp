@@ -1,6 +1,5 @@
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
-#include <boost/enable_shared_from_this.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/thread.hpp>
 #include <iostream>
@@ -10,6 +9,7 @@
 
 #include "Config.hpp"
 #include "Peer.hpp"
+#include "Network.hpp"
 
 using namespace boost;
 using boost::asio::ip::tcp;
@@ -17,85 +17,6 @@ using boost::asio::ip::tcp;
 
 
 
-
-class Local_Peer {
-
-public:
-  Local_Peer() {
-    
-
-    char name[HOST_NAME_MAX + 1];
-    name[HOST_NAME_MAX] = '\0';
-    // gethostname is not guaranteed to add \0 if it needs to truncate host name
-
-    gethostname(name, sizeof(name) -1);
-
-    id = string(name);
-  }
-
-private:
-  string id;
-};
-
-class Network
-{
-public:
-
-  Network(shared_ptr<asio::io_service> _ios, shared_ptr<tcp::resolver> _resolver,
-	  Local_Peer& p)
-    : io_service(_ios), resolver(_resolver), local_peer(p) {}
-  
-  void add_peer(shared_ptr<Peer> p) {
-
-    peers.push_back(p);
-    p->start_listening();
-  }
-
-  vector<shared_ptr<Peer> > get_peers() {
-    return peers;
-  }
-
-  void add(string peer_name) {
-
-    tcp::resolver::query query(peer_name, "1337");
-    tcp::resolver::iterator endpoint_iterator = resolver->resolve(query);
-
-    shared_ptr<tcp::socket> socket(new tcp::socket(*io_service));
-    asio::connect(*socket, endpoint_iterator);
-
-    shared_ptr<Peer> new_peer(new Peer(socket));
-    add_peer(new_peer);
-  }
-
-  void send_all(string message) {
-
-    check_peers();
-    DEBUG("Sending \"" << message << "\" to " << peers.size() << " peers.");
-
-    for (uint p=0 ; p<peers.size() ; p++) {
-
-      peers[p]->send(message);
-    }
-  }
-
-  void check_peers() {
-
-    for (uint p=0 ; p<peers.size() ; p++) {
-
-      while (peers.size() > p  && ! peers[p]->is_alive() ) {
-        peers.erase( peers.begin()+p );
-        DEBUG("Removed peer, " << peers.size() << " remaining.");
-      }
-    }
-  }
-
-private:
-  shared_ptr<asio::io_service> io_service;
-  shared_ptr<tcp::resolver> resolver;
-
-  vector<shared_ptr<Peer> > peers;
-  Local_Peer local_peer;
-};
 
 
 class Local_Listener {
