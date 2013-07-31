@@ -24,23 +24,51 @@ using boost::asio::ip::tcp;
 const string COMMAND_SEND = "send";
 const string COMMAND_ADD = "add";
 
-class Peer;
-void display_incoming_message(Peer* p);
 
 class Peer
 {
 public:
 
+  enum State {
+    CONNECTING = 0,
+    ALIVE,
+    DEAD
+  };
+
   Peer(shared_ptr<tcp::socket> _socket)
-    : socket(_socket) {}
+    : socket(_socket), state(CONNECTING) {}
+
+  void set_state(State new_state) {
+    state = new_state;
+
+    DEBUG("Peer @" << get_address() << " now has state " << state << ".");
+  }
 
   void start_listening() {
+    set_state(ALIVE);
+    listen();
+  }
+
+  void listen() {
     memset(last_message, 0, MESSAGE_SIZE);
     
     socket->async_read_some(asio::buffer(last_message),
-			    bind(&display_incoming_message, this));
+			    bind(&Peer::handle_incoming_message, this,
+                                 asio::placeholders::error));
   }
 
+  void handle_incoming_message(const system::error_code& error) {
+
+    if (error == asio::error::eof) {
+      DEBUG("Peer @" << get_address() << " disconnected.");
+      set_state(DEAD);
+    }
+    else {
+      cout << "- " << get_address() << ": " << get_last_message() << endl;
+      listen();
+    }
+  }
+  
   tcp::socket& get_socket() {
     return *socket;
   }
@@ -62,11 +90,16 @@ public:
   void finish_write() {
   }
 
+  bool is_alive() {
+    return (state!=DEAD);
+  }
+
 
 private:
   string id;
   shared_ptr<tcp::socket> socket;
   char last_message[MESSAGE_SIZE];
+  State state;
 };
 
 
@@ -100,6 +133,7 @@ public:
   void add_peer(shared_ptr<Peer> p) {
 
     peers.push_back(p);
+    p->start_listening();
   }
 
   vector<shared_ptr<Peer> > get_peers() {
@@ -116,16 +150,27 @@ public:
 
     shared_ptr<Peer> new_peer(new Peer(socket));
     add_peer(new_peer);
-    new_peer->start_listening(); // TODO: factorize stuff?
   }
 
   void send_all(string message) {
 
+    check_peers();
     DEBUG("Sending \"" << message << "\" to " << peers.size() << " peers.");
 
     for (uint p=0 ; p<peers.size() ; p++) {
 
       peers[p]->send(message);
+    }
+  }
+
+  void check_peers() {
+
+    for (uint p=0 ; p<peers.size() ; p++) {
+
+      while (peers.size() > p  && ! peers[p]->is_alive() ) {
+        peers.erase( peers.begin()+p );
+        DEBUG("Removed peer, " << peers.size() << " remaining.");
+      }
     }
   }
 
@@ -170,7 +215,6 @@ private:
       shared_ptr<Peer> new_peer(*new_peer_it);
 
       network->add_peer(new_peer);
-      new_peer->start_listening();
 
       pending_peers.erase(new_peer_it);
 
@@ -189,13 +233,6 @@ private:
   list<Peer*> pending_peers;
 };
 
-// function to bind socket readings to
-void display_incoming_message(Peer* p) {
-  
-  cout << "- " << p->get_address() << ": " << p->get_last_message() << endl;
-
-  p->start_listening();
-}
 
 void parse_input(string& input, string& command, string& argument) {
 
