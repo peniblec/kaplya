@@ -12,7 +12,6 @@ using namespace std;
 #define DEBUG(x)
 #endif
 
-
 #define MESSAGE_SIZE 128
 
 const string COMMAND_SEND = "send";
