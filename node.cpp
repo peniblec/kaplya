@@ -8,99 +8,14 @@
 #include <vector>
 #include <list>
 
-using namespace std;
+#include "Config.hpp"
+#include "Peer.hpp"
+
 using namespace boost;
 using boost::asio::ip::tcp;
 
-#ifdef DEBUG_ON
-#define DEBUG(x) do { cerr << "DBG: " << x << endl; } while (0)
-#else
-#define DEBUG(x)
-#endif
 
 
-#define MESSAGE_SIZE 128
-
-const string COMMAND_SEND = "send";
-const string COMMAND_ADD = "add";
-
-
-class Peer
-{
-public:
-
-  enum State {
-    CONNECTING = 0,
-    ALIVE,
-    DEAD
-  };
-
-  Peer(shared_ptr<tcp::socket> _socket)
-    : socket(_socket), state(CONNECTING) {}
-
-  void set_state(State new_state) {
-    state = new_state;
-
-    DEBUG("Peer @" << get_address() << " now has state " << state << ".");
-  }
-
-  void start_listening() {
-    set_state(ALIVE);
-    listen();
-  }
-
-  void listen() {
-    memset(last_message, 0, MESSAGE_SIZE);
-    
-    socket->async_read_some(asio::buffer(last_message),
-			    bind(&Peer::handle_incoming_message, this,
-                                 asio::placeholders::error));
-  }
-
-  void handle_incoming_message(const system::error_code& error) {
-
-    if (error == asio::error::eof) {
-      DEBUG("Peer @" << get_address() << " disconnected.");
-      set_state(DEAD);
-    }
-    else {
-      cout << "- " << get_address() << ": " << get_last_message() << endl;
-      listen();
-    }
-  }
-  
-  tcp::socket& get_socket() {
-    return *socket;
-  }
-
-  string get_address() {
-    return socket->remote_endpoint().address().to_string();
-  }
-
-  string get_last_message() {
-    string ret(last_message);
-    return ret;
-  }
-
-  void send(string message) {
-    asio::async_write(*socket, asio::buffer(message),
-		      bind(&Peer::finish_write, this));
-  }
-
-  void finish_write() {
-  }
-
-  bool is_alive() {
-    return (state!=DEAD);
-  }
-
-
-private:
-  string id;
-  shared_ptr<tcp::socket> socket;
-  char last_message[MESSAGE_SIZE];
-  State state;
-};
 
 
 class Local_Peer {
